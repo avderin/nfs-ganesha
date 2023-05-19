@@ -43,6 +43,7 @@
 #include <sys/socket.h>
 #include <linux/vm_sockets.h>
 #endif
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <assert.h>
@@ -617,6 +618,13 @@ static int Bind_sockets_V6(void)
 		LogInfo(COMPONENT_DISPATCH, "Binding to address %s", str);
 	}
 
+	int if_index = 0;
+	char* iface_name = nfs_param.core_param.nfs_interface;
+
+	if (iface_name != NULL) {
+		if_index = if_nametoindex(iface_name);
+	}
+
 	for (p = P_NFS; p < P_COUNT; p++) {
 		if (nfs_protocol_enabled(p)) {
 
@@ -632,6 +640,7 @@ static int Bind_sockets_V6(void)
 				    &nfs_param.core_param.bind_addr)->sin6_addr;
 				pdatap->sinaddr_udp6.sin6_port =
 				    htons(nfs_param.core_param.port[p]);
+				pdatap->sinaddr_tcp6.sin6_scope_id = if_index;
 
 				pdatap->netbuf_udp6.maxlen =
 				    sizeof(pdatap->sinaddr_udp6);
@@ -689,6 +698,7 @@ static int Bind_sockets_V6(void)
 			    &nfs_param.core_param.bind_addr)->sin6_addr;
 			pdatap->sinaddr_tcp6.sin6_port =
 			    htons(nfs_param.core_param.port[p]);
+			pdatap->sinaddr_tcp6.sin6_scope_id = if_index;
 
 			pdatap->netbuf_tcp6.maxlen =
 			    sizeof(pdatap->sinaddr_tcp6);
@@ -722,7 +732,7 @@ static int Bind_sockets_V6(void)
 			}
 
 			rc = bind(tcp_socket[p],
-				  (struct sockaddr *)
+				  (struct sockaddr_in6 *)
 				   pdatap->bindaddr_tcp6.addr.buf,
 				 (socklen_t) pdatap->si_tcp6.si_alen);
 			if (rc == -1) {
@@ -1044,6 +1054,8 @@ static bool enable_udp_listener(protos prot)
  */
 static int Allocate_sockets_V4(int p)
 {
+	char* iface_name = nfs_param.core_param.nfs_interface;
+
 	udp_socket[p] = tcp_socket[p] = -1;
 	if (enable_udp_listener(p)) {
 		udp_socket[p] = socket(AF_INET,
@@ -1062,11 +1074,19 @@ static int Allocate_sockets_V4(int p)
 
 			return -1;
 		}
+
+		if (iface_name != NULL) {
+			setsockopt(udp_socket[p], SOL_SOCKET, SO_BINDTODEVICE, iface_name, strlen(iface_name));
+		}
 	}
 
 	tcp_socket[p] = socket(AF_INET,
 			       SOCK_STREAM,
 			       IPPROTO_TCP);
+
+	if (iface_name != NULL) {
+		setsockopt(tcp_socket[p], SOL_SOCKET, SO_BINDTODEVICE, iface_name, strlen(iface_name));
+	}
 
 	if (tcp_socket[p] == -1) {
 		LogWarn(COMPONENT_DISPATCH,
@@ -1122,6 +1142,8 @@ static void Allocate_sockets(void)
 
 	LogFullDebug(COMPONENT_DISPATCH, "Allocation of the sockets");
 
+	char* iface_name = nfs_param.core_param.nfs_interface;
+
 	for (p = P_NFS; p < P_COUNT; p++) {
 		/* Initialize all the sockets to -1 because
 		 * it makes some code later easier */
@@ -1158,6 +1180,10 @@ static void Allocate_sockets(void)
 						 tags[p], errno,
 						 strerror(errno));
 				}
+
+				if (iface_name != NULL) {
+					setsockopt(udp_socket[p], SOL_SOCKET, SO_BINDTODEVICE, iface_name, strlen(iface_name));
+				}
 			}
 
 			tcp_socket[p] = socket(AF_INET6,
@@ -1188,6 +1214,10 @@ static void Allocate_sockets(void)
 				    errno, strerror(errno));
 
 				goto try_V4;
+			}
+
+			if (iface_name != NULL) {
+				setsockopt(tcp_socket[p], SOL_SOCKET, SO_BINDTODEVICE, iface_name, strlen(iface_name));
 			}
 
 try_V4:
