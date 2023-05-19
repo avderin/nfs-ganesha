@@ -439,6 +439,8 @@ typedef struct nfs_core_param {
 	    Useful when dealing with a slow Directory Service provider in an
 	    environment where users are part of large number of groups.
 	*/
+	char *nfs_interface;
+	/** Interface name where the the NFS socket is bound to */
 	uint32_t max_uid_to_grp_reqs;
 	/** Enable v3 filehandle to be used for v4 */
 	bool enable_v3_fh_for_v4;
